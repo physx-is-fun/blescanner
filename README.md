@@ -215,3 +215,48 @@ npx expo run:android
 
 At this point we finished doing the development and this reposatory contains every necessary files, except the node_modules and android folders because it's size.  Now let's turn this into production. In production you will have unique credentials, therefore I do not want to include them.
 
+## 29. Login to your expo dev profile
+
+```
+eas login
+```
+
+## 30. EAS build configuration
+
+```
+eas build:configure
+```
+
+## 31. Replace your eas.json file
+
+```JSON
+{
+  "cli": {
+    "version": ">= 3.9.0"
+  },
+  "build": {
+    "preview": {
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "production": {},
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "ios": {
+        "resourceClass": "m-medium"
+      },
+      "channel": "development"
+    }
+  }
+}
+```
+
+## 31. EAS preview built
+
+```
+eas build -p android --profile preview
+```
+
+This will take some time.
