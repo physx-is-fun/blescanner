@@ -30,9 +30,9 @@ https://developer.android.com/studio/install
 
 Set the necessary environmental variables.
 
-## 7. Install Java Development Kit (JDK) 21 on your computer
+## 7. Install Java Development Kit (JDK) 20 on your computer
 
-https://www.oracle.com/java/technologies/downloads/#jdk21-windows
+https://www.oracle.com/java/technologies/javase/jdk20-archive-downloads.html
 
 Set the necessary environmental variables.
 
@@ -115,7 +115,9 @@ adb start-server
 
 ## 16. Plug device
 
-## 17. Starting the application in the development framework
+## 17. Revoke USB debugging authorization, then disable USB debugging, and finally enable USB debugging on your smartphone
+
+## 18. Starting the application in the development framework
 
 ```
 npx expo run:android
@@ -123,15 +125,15 @@ npx expo run:android
 
 This process will take sime time for the first run.
 
-## 18. Have a look to the application
+## 19. Have a look to the application
 
-## 19. Install react-native-ble-plx
+## 20. Install react-native-ble-plx
 
 ```
 npx expo install react-native-ble-plx
 ```
 
-## 20. Update your eas.json file
+## 21. Update your eas.json file
 
 ```JSON
 {
@@ -148,13 +150,13 @@ npx expo install react-native-ble-plx
 }
 ```
 
-## 21. Install expo device
+## 22. Install expo device
 
 ```
 npx expo install expo-device
 ```
 
-## 22. Add plugins to your app.json file
+## 23. Add plugins to your app.json file
 
 ```JSON
  "plugins": [
@@ -169,27 +171,39 @@ npx expo install expo-device
     ]
 ```
 
-## 23. Install eas-cli
+## 24. Install eas-cli
 
 ```
 npx npm install eas-cli
 ```
 
-## 24 Install expo-dev-client
+## 25 Install expo-dev-client
 
 ```
 npx expo install expo-dev-client
 ```
 
-## 25. Do the software development
+## 26 Install react-native-background-timer
 
-## 26. Create prebuild
+```
+npm install react-native-background-timer
+```
+
+## 27 Install react-native-ble-advertiser
+
+```
+npm install react-native-ble-advertiser
+```
+
+## 28. Do the software development
+
+## 29. Create prebuild
 
 ```
 npx expo prebuild
 ```
 
-## 27. Update your AndroidManifest.xml
+## 30. Update your AndroidManifest.xml
 
 Locate and update your AndroidManifest.xml from ```<project_name>\android\app\src\main\AndroidManifest.xml```
 
@@ -205,9 +219,35 @@ Locate and update your AndroidManifest.xml from ```<project_name>\android\app\sr
 <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
 <uses-feature android:name="android.hardware.bluetooth_le" android:required="true"/>
+<!-- Permissions for Bluetooth advertising -->
+<uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE"/>
 ```
 
-## 28. Starting the application in the development framework
+## 30. Update your build.gradle
+
+Locate and update your build.gradle from ```<project_name>\node_modules\react-native-ble-advertiser\android\build.gradle```
+
+```
+apply plugin: 'com.android.library'
+
+android {
+    compileSdkVersion 30
+    buildToolsVersion "30.0.3"
+
+    defaultConfig {
+        minSdkVersion 21
+        targetSdkVersion 30
+        versionCode 1
+        versionName "1.0"
+    }
+}
+
+dependencies {
+    implementation 'com.facebook.react:react-native:+'
+}
+```
+
+## 31. Starting the application in the development framework
 
 ```
 npx expo run:android
@@ -215,19 +255,19 @@ npx expo run:android
 
 At this point we finished doing the development and this reposatory contains every necessary files, except the node_modules and android folders because it's size.  Now let's turn this into production. In production you will have unique credentials, therefore I do not want to include them.
 
-## 29. Login to your expo dev profile
+## 32. Login to your expo dev profile
 
 ```
 eas login
 ```
 
-## 30. EAS build configuration
+## 33. EAS build configuration
 
 ```
 eas build:configure
 ```
 
-## 31. Replace your eas.json file
+## 34. Replace your eas.json file
 
 ```JSON
 {
@@ -253,10 +293,16 @@ eas build:configure
 }
 ```
 
-## 31. EAS preview built
+## 35. EAS preview built
 
 ```
 eas build -p android --profile preview
 ```
 
-This will take some time.
+## 36. Build locally your .aab file (optional)
+
+https://docs.expo.dev/guides/local-app-production/
+
+## 37. Convert locally your .apk file from .aab file (optional)
+
+## 38. Copy and paste your .apk file to your Android smartphone and install it
