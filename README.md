@@ -1,6 +1,6 @@
 # BLE scanner application
 
-This reposatory shows an example Android application for a bluetooth low energy scanner written is react native, using expo. Step by step I will guide you how to develop and deploy into production this application. The goal is to scan the nearby smartphones with enabled bluetooth (with different IDs) and estimate it's relative distance for each source. Nowadays the electric rollers (scooters) are great risk to car traffic. The aim is to alarm the smartphone users (cars), to prepare the nearby scooter traffic. The drawback of this application is that it can identify any kind of ble devices, like smartwatches. Therefore it would be a cool to implement a separate mode for cars (scan) and another mode for scooters (beacon) in the same application.
+This reposatory shows an example Android application for a bluetooth low energy scanner written is react native, using expo. Step by step I will guide you how to develop and deploy into production this application. The goal is to scan the nearby smartphones with enabled bluetooth (with different IDs) and estimate it's relative distance for each source. Nowadays the electric rollers (scooters) are great risk to car traffic. The aim is to alarm the smartphone users (cars), to prepare the nearby scooter traffic. Therefore I implemented a separate mode for cars (scan) and another mode for scooters (beacon) in the same application.
 
 ## 1. Install Expo go on your Android smartphone
 
