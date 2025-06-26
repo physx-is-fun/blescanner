@@ -221,6 +221,8 @@ Locate and update your AndroidManifest.xml from ```<project_name>\android\app\sr
 <uses-feature android:name="android.hardware.bluetooth_le" android:required="true"/>
 <!-- Permissions for Bluetooth advertising -->
 <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE"/>
+<!-- Permissions for Internet -->
+<uses-permission android:name="android.permission.INTERNET" />
 ```
 
 ## 30. Update your build.gradle
@@ -304,5 +306,7 @@ eas build -p android --profile preview
 https://docs.expo.dev/guides/local-app-production/
 
 ## 37. Convert locally your .apk file from .aab file (optional)
+
+https://stackoverflow.com/questions/53040047/generate-an-apk-file-from-an-aab-file-android-app-bundle
 
 ## 38. Copy and paste your .apk file to your Android smartphone and install it
