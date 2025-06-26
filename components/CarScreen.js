@@ -1,218 +1,259 @@
-import { useEffect, useState } from 'react';
-import { Alert, Button, FlatList, PermissionsAndroid, StyleSheet, Text, View } from 'react-native';
+import { Buffer } from 'buffer';
+import { useEffect, useRef, useState } from 'react';
+import {
+  Alert,
+  AppState,
+  Button,
+  FlatList,
+  PermissionsAndroid,
+  Platform,
+  StyleSheet,
+  Text,
+  Vibration,
+  View,
+} from 'react-native';
 import { BleManager } from 'react-native-ble-plx';
 
-// Constants for RSSI calculation
-const RSSI_0 = -59; // Reference RSSI value at 1 meter
-const N = 2; // Path loss exponent (ideal free space environment)
+const RSSI_AT_ONE_METER = -59;
+const PATH_LOSS_EXPONENT = 2.0;
 
 const CarScreen = () => {
+  const [devices, setDevices] = useState(new Map());
+  const devicesRef = useRef(new Map());
   const [isScanning, setIsScanning] = useState(false);
-  const [devices, setDevices] = useState([]); // State to store discovered devices
-  const [manager, setManager] = useState(null); // State to store BleManager instance
 
-  // Request Bluetooth and Location permissions at runtime
-  const requestPermissions = async () => {
-    try {
-      // Request ACCESS_FINE_LOCATION permission
-      const locationPermission = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-        {
-          title: "Location Permission",
-          message: "This app needs access to your location to scan for Bluetooth devices.",
-        }
-      );
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncError, setSyncError] = useState(null);
+  const [timeOffset, setTimeOffset] = useState(0);
+  const [clockSynced, setClockSynced] = useState(false);
 
-      if (locationPermission !== PermissionsAndroid.RESULTS.GRANTED) {
-        Alert.alert("Permission Denied", "We need location access to scan for Bluetooth devices.");
-        return;
-      }
+  const [manager] = useState(() => new BleManager());
 
-      // Request BLUETOOTH_SCAN permission
-      const bluetoothScanPermission = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
-        {
-          title: "Bluetooth Scan Permission",
-          message: "This app needs Bluetooth access to scan for nearby devices.",
-        }
-      );
-
-      if (bluetoothScanPermission !== PermissionsAndroid.RESULTS.GRANTED) {
-        Alert.alert("Permission Denied", "We need Bluetooth access to scan for devices.");
-        return;
-      }
-
-      // Request BLUETOOTH_CONNECT permission (required for Android 12 and above)
-      const bluetoothConnectPermission = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
-        {
-          title: "Bluetooth Connect Permission",
-          message: "This app needs permission to connect to Bluetooth devices.",
-        }
-      );
-
-      if (bluetoothConnectPermission !== PermissionsAndroid.RESULTS.GRANTED) {
-        Alert.alert("Permission Denied", "We need Bluetooth connect access to interact with devices.");
-        return;
-      }
-
-      console.log("All permissions granted!");
-    } catch (err) {
-      console.warn("Error requesting permissions:", err);
-    }
-  };
-
-  // Initialize BleManager and request permissions when component mounts
   useEffect(() => {
     requestPermissions();
-    const bleManager = new BleManager();
-    setManager(bleManager);  // Store BleManager instance
-
-    // Listen for Bluetooth state changes
-    const subscription = bleManager.onStateChange((state) => {
-      console.log("Bluetooth State:", state);
-      if (state === 'PoweredOn') {
-        console.log("Bluetooth is ready to use");
-      } else {
-        Alert.alert('Bluetooth Disabled', 'Please enable Bluetooth to use the app.');
+    const stateSub = manager.onStateChange((state) => {
+      if (state === 'PoweredOn' && !isScanning && clockSynced) {
+        startScan();
       }
     }, true);
 
-    // Cleanup on unmount
+    const appSub = AppState.addEventListener('change', handleAppStateChange);
+
+    const refreshInterval = setInterval(() => {
+      setDevices(new Map(devicesRef.current));
+    }, 100);
+
+    syncClock();
+
     return () => {
-      subscription.remove();
-      bleManager.destroy();
+      stateSub.remove();
+      appSub.remove();
+      clearInterval(refreshInterval);
+      stopScan();
+      manager.destroy();
     };
   }, []);
 
-  // Function to estimate distance from RSSI value
-  const calculateDistance = (rssi) => {
-    if (rssi === 0) return -1.0; // If RSSI is 0, return an invalid distance
-    const ratio = rssi * 1.0 / RSSI_0;
-    if (ratio < 1.0) {
-      return Math.pow(ratio, N);
-    } else {
-      return 0.89976 * Math.pow(ratio, 7.7095) + 0.111; // Using a more accurate formula for larger distances
+  const requestPermissions = async () => {
+    if (Platform.OS === 'android') {
+      try {
+        await PermissionsAndroid.requestMultiple([
+          PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
+          PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+        ]);
+      } catch (err) {
+        Alert.alert('Permission Error', err.message);
+      }
     }
   };
 
-  // Start scanning for devices
-  const handleStartScan = async () => {
-    if (manager) {
-      if (isScanning) {
-        console.log("Scan already running.");
-        return; // Prevent starting scan if it's already in progress
+  const handleAppStateChange = (nextState) => {
+    if (nextState === 'active' && !isScanning && clockSynced) {
+      startScan();
+    } else if (nextState !== 'active' && isScanning) {
+      stopScan();
+    }
+  };
+
+  const syncClock = async () => {
+    try {
+      setIsSyncing(true);
+      setSyncError(null);
+
+      const res = await fetch('https://timeapi.io/api/Time/current/zone?timeZone=UTC');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const json = await res.json();
+
+      if (!json.dateTime) {
+        throw new Error('Invalid response format: missing dateTime');
       }
 
-      console.log("Starting scan...");
-      setIsScanning(true);
+      const internetDate = new Date(json.dateTime + 'Z');
+      const internetTime = internetDate.getTime();
+      const localTime = Date.now();
+      const offset = internetTime - localTime;
 
-      // Start scanning
-      manager.startDeviceScan([], null, (error, device) => {
-        if (error) {
-          console.error("Scan error:", error);
-          return;
-        }
-
-        if (device) {
-          console.log(`Found device: ${device.name}`);
-
-          // Filter out devices with no valid name and avoid duplicates
-          if (device.name && device.name !== 'Unnamed Device') {
-            setDevices((prevDevices) => {
-              const updatedDevices = [
-                ...prevDevices.filter((dev) => dev.id !== device.id),  // Remove device if it already exists
-                { ...device, rssi: device.rssi },  // Add updated device with new RSSI value
-              ];
-              return updatedDevices;  // Return the updated list
-            });
-          }
-
-          if (device.name && device.name.includes('Scooter')) {
-            Alert.alert('Scooter Detected!', `Scooter found: ${device.name}`);
-          }
-        }
-      });
-    } else {
-      console.error("BleManager is null, cannot start scan.");
+      console.log(`[ClockSync] Offset: ${offset} ms`);
+      setTimeOffset(offset);
+      setClockSynced(true);
+    } catch (err) {
+      console.error('[ClockSync] Failed:', err.message);
+      setSyncError(err.message || 'Unknown error');
+      setClockSynced(false);
+    } finally {
+      setIsSyncing(false);
     }
   };
 
-  // Stop scanning for devices
-  const handleStopScan = () => {
-    if (manager) {
-      console.log("Stopping scan...");
-      manager.stopDeviceScan();
-      setIsScanning(false);
-
-      // Reset the devices list when scanning stops
-      setDevices([]);  // This will clear the list of devices
-    } else {
-      console.error("BleManager is null, cannot stop scan.");
-    }
+  const calculateDistance = (rssi) => {
+    if (!rssi || rssi === 0) return -1;
+    return Math.pow(10, (RSSI_AT_ONE_METER - rssi) / (10 * PATH_LOSS_EXPONENT));
   };
 
-  // Render device item
-  const renderDeviceItem = ({ item }) => {
-    const distance = calculateDistance(item.rssi);  // Calculate distance from RSSI value
-    return (
-      <View style={styles.deviceItem}>
-        <Text>Name: {item.name || 'Unnamed Device'}</Text>
-        <Text>ID: {item.id}</Text>
-        <Text>RSSI: {item.rssi} dBm</Text>
-        <Text>Distance: {distance >= 0 ? `${distance.toFixed(2)} meters` : 'Unknown'}</Text>
-      </View>
-    );
+  const startScan = () => {
+    if (isScanning || !clockSynced) return;
+    setIsScanning(true);
+    console.log('📡 Starting scan');
+
+    manager.startDeviceScan(null, { allowDuplicates: true }, (error, device) => {
+      if (error) {
+        console.error('Scan error:', error.message);
+        return;
+      }
+
+      if (device && device.id.includes('Scooter')) {
+        let latency = null;
+        let distance = calculateDistance(device.rssi);
+
+        if (device.manufacturerData) {
+          try {
+            const buffer = Buffer.from(device.manufacturerData, 'base64');
+            const tsBytes = buffer.slice(-6); // last 6 bytes = timestamp
+            const beaconTime = tsBytes.readUIntBE(0, 6);
+            const now = Date.now() + timeOffset;
+            latency = now - beaconTime;
+          } catch {
+            latency = null;
+          }
+        }
+
+        const isNew = !devicesRef.current.has(device.id);
+        if (isNew) {
+          Vibration.vibrate(300);
+        }
+
+        devicesRef.current.set(device.id, {
+          id: device.id,
+          name: device.name || 'unknown',
+          rssi: device.rssi,
+          distance,
+          latency,
+        });
+      }
+    });
   };
+
+  const stopScan = () => {
+    manager.stopDeviceScan();
+    setIsScanning(false);
+    devicesRef.current.clear();
+    setDevices(new Map());
+    console.log('🛑 Stopped scan and cleared list');
+  };
+
+  const renderDevice = ({ item }) => (
+    <View style={styles.deviceItem}>
+      <Text>Name: {item.name}</Text>
+      <Text>ID: {item.id}</Text>
+      <Text>RSSI: {item.rssi} dBm</Text>
+      <Text>
+        Distance: {item.distance > 0 ? `${item.distance.toFixed(2)} m` : 'Unknown'}
+      </Text>
+      <Text>
+        Latency:{' '}
+        {item.latency !== null && item.latency >= 0
+          ? `${item.latency} ms`
+          : 'N/A'}
+      </Text>
+    </View>
+  );
 
   return (
     <View style={styles.container}>
-      <Text style={styles.header}>Car's Bluetooth Scanner</Text>
-      <Button 
-        title={isScanning ? "Stop Scanning" : "Start Scanning"}
-        onPress={isScanning ? handleStopScan : handleStartScan}
-      />
-      
-      <Text style={styles.deviceListHeader}>Nearby Devices:</Text>
-      
-      {devices.length === 0 ? (
-        <Text>No devices detected.</Text>
-      ) : (
-        <FlatList
-          data={devices}
-          keyExtractor={(item) => item.id}
-          renderItem={renderDeviceItem}
-        />
+      <Text style={styles.header}>🚗 Car Scanner</Text>
+
+      {!clockSynced && (
+        <>
+          <Text style={styles.status}>
+            {isSyncing ? '🔄 Syncing time…' : '⚠️ Clock not synced.'}
+          </Text>
+          {syncError && <Text style={styles.errorText}>{syncError}</Text>}
+          {!isSyncing && (
+            <Button title="Retry Sync" onPress={syncClock} color="#007BFF" />
+          )}
+        </>
+      )}
+
+      {clockSynced && (
+        <>
+          <Text style={styles.status}>✅ Clock Synced</Text>
+
+          {!isScanning ? (
+            <Button title="Start Scan" onPress={startScan} />
+          ) : (
+            <Button title="Stop Scan" onPress={stopScan} color="#d9534f" />
+          )}
+
+          <FlatList
+            style={styles.listContainer}
+            data={Array.from(devices.values())}
+            keyExtractor={(item) => item.id}
+            renderItem={renderDevice}
+          />
+        </>
       )}
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 20,
-    backgroundColor: '#f5f5f5',
-    justifyContent: 'flex-start',
-  },
+  container: { flex: 1, padding: 24, backgroundColor: '#fff' },
   header: {
-    fontSize: 24,
+    fontSize: 26,
     fontWeight: 'bold',
     textAlign: 'center',
     marginBottom: 20,
   },
-  deviceListHeader: {
-    marginTop: 20,
+  status: {
     fontSize: 18,
-    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  errorText: {
+    marginTop: 8,
+    color: 'red',
+    textAlign: 'center',
+  },
+  listContainer: {
+    maxHeight: 450,
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 8,
+    padding: 8,
   },
   deviceItem: {
+    backgroundColor: '#f2f2f2',
     padding: 10,
-    marginVertical: 5,
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 5,
+    marginVertical: 6,
+    borderRadius: 6,
+  },
+  emptyText: {
+    textAlign: 'center',
+    color: '#888',
+    fontSize: 16,
+    paddingVertical: 20,
   },
 });
 
