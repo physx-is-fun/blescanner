@@ -12,24 +12,26 @@ import {
 } from 'react-native';
 import BleAdvertiser from 'react-native-ble-advertiser';
 
-const COMPANY_ID = 0x004C; // Apple company ID
+const COMPANY_ID = 0x004C; // Apple
 
 const ScooterBeaconScreen = () => {
   const [isBroadcasting, setIsBroadcasting] = useState(false);
   const [deviceId, setDeviceId] = useState('');
   const [error, setError] = useState(null);
-  const [isSynced, setIsSynced] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [clockError, setClockError] = useState(null);
 
   useEffect(() => {
     (async () => {
       try {
         await requestPermissions();
         BleAdvertiser.setCompanyId(COMPANY_ID);
-        await syncClock();
+
+        const randomHex = Math.floor(Math.random() * 0xffff)
+          .toString(16)
+          .padStart(4, '0')
+          .toUpperCase();
+        setDeviceId(`Scooter-${randomHex}`);
       } catch (err) {
-        Alert.alert('Permissions or Sync Error', err.message);
+        Alert.alert('Permission Error', err.message);
       }
     })();
 
@@ -40,50 +42,26 @@ const ScooterBeaconScreen = () => {
 
   const requestPermissions = async () => {
     if (Platform.OS === 'android') {
-      const granted = await PermissionsAndroid.requestMultiple([
-        PermissionsAndroid.PERMISSIONS.BLUETOOTH_ADVERTISE,
-        PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
-        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-      ]);
-      const allGranted = Object.values(granted).every(
-        (status) => status === PermissionsAndroid.RESULTS.GRANTED
-      );
-      if (!allGranted) throw new Error('Required permissions not granted');
-    }
-  };
+      try {
+        const granted = await PermissionsAndroid.requestMultiple([
+          PermissionsAndroid.PERMISSIONS.BLUETOOTH_ADVERTISE,
+          PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+        ]);
 
-  // Clock sync only to gate beacon start, not needed for payload now
-  const syncClock = async () => {
-    setIsSyncing(true);
-    setClockError(null);
-    try {
-      const res = await fetch('https://timeapi.io/api/Time/current/zone?timeZone=UTC');
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-      const json = await res.json();
-      if (!json.dateTime) throw new Error('Invalid response format: missing dateTime');
-
-      setIsSynced(true);
-
-      // Generate random ID
-      const randomHex = Math.floor(Math.random() * 0xffff)
-        .toString(16)
-        .padStart(4, '0')
-        .toUpperCase();
-      setDeviceId(`Scooter-${randomHex}`);
-    } catch (err) {
-      setClockError(err.message || 'Unknown error');
-      setIsSynced(false);
-    } finally {
-      setIsSyncing(false);
+        Object.entries(granted).forEach(([perm, status]) => {
+          console.log(`[Permission] ${perm}: ${status}`);
+        });
+      } catch (err) {
+        console.error('[Permission] Error requesting permissions:', err.message);
+        Alert.alert('Permission Error', err.message);
+      }
     }
   };
 
   const generatePayload = () => {
     try {
-      // Encode "Scooter-XXXX" as UTF-8 bytes
-      const payload = Buffer.from(deviceId, 'utf-8');
-      return payload;
+      return Buffer.from(deviceId, 'utf-8');
     } catch (err) {
       setError(err.message);
       return null;
@@ -91,11 +69,6 @@ const ScooterBeaconScreen = () => {
   };
 
   const startBeacon = async () => {
-    if (!isSynced) {
-      Alert.alert('Sync Required', 'Please sync the clock before advertising.');
-      return;
-    }
-
     const payloadBuffer = generatePayload();
     if (!payloadBuffer) return;
 
@@ -106,9 +79,11 @@ const ScooterBeaconScreen = () => {
         '00000000-0000-1000-8000-00805F9B34FB',
         [1, 0],
         {
-          includeDeviceName: false,
+          includeDeviceName: true,
           includeTxPowerLevel: false,
           manufacturerData: base64Payload,
+          advertiseMode: BleAdvertiser.ADVERTISE_MODE_LOW_LATENCY,
+          txPowerLevel: BleAdvertiser.ADVERTISE_TX_POWER_HIGH,
         }
       );
 
@@ -136,29 +111,13 @@ const ScooterBeaconScreen = () => {
     <View style={styles.container}>
       <Text style={styles.header}>🛴 Scooter Beacon</Text>
 
-      {!isSynced ? (
-        <>
-          <Text style={styles.status}>
-            {isSyncing ? '🔄 Syncing time…' : '⚠️ Clock not synced.'}
-          </Text>
-          {clockError && <Text style={styles.error}>{clockError}</Text>}
-          {!isSyncing && (
-            <Button title="Retry Sync" onPress={syncClock} color="#007BFF" />
-          )}
-        </>
+      <Text style={styles.label}>Device ID:</Text>
+      <Text selectable style={styles.mono}>{deviceId}</Text>
+
+      {!isBroadcasting ? (
+        <Button title="Start Beacon" onPress={startBeacon} />
       ) : (
-        <>
-          <Text style={styles.status}>✅ Clock Synced</Text>
-
-          <Text style={styles.label}>Device ID:</Text>
-          <Text selectable style={styles.mono}>{deviceId}</Text>
-
-          {!isBroadcasting ? (
-            <Button title="Start Beacon" onPress={startBeacon} />
-          ) : (
-            <Button title="Stop Beacon" onPress={stopBeacon} color="#d9534f" />
-          )}
-        </>
+        <Button title="Stop Beacon" onPress={stopBeacon} color="#d9534f" />
       )}
 
       {error && <Text style={styles.error}>❌ {error}</Text>}
@@ -169,7 +128,6 @@ const ScooterBeaconScreen = () => {
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 24, justifyContent: 'center', backgroundColor: '#FFF' },
   header: { fontSize: 26, fontWeight: 'bold', textAlign: 'center', marginBottom: 20 },
-  status: { fontSize: 18, textAlign: 'center', marginBottom: 20 },
   label: { fontSize: 16, fontWeight: '600', marginTop: 10 },
   mono: {
     fontFamily: Platform.OS === 'android' ? 'monospace' : 'Courier',

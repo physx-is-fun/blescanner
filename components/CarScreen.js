@@ -1,3 +1,4 @@
+// CarScreen.js
 import { Buffer } from 'buffer';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -21,18 +22,13 @@ const CarScreen = () => {
   const [devices, setDevices] = useState(new Map());
   const devicesRef = useRef(new Map());
   const [isScanning, setIsScanning] = useState(false);
-
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [syncError, setSyncError] = useState(null);
-  const [timeOffset, setTimeOffset] = useState(0);
-  const [clockSynced, setClockSynced] = useState(false);
-
   const [manager] = useState(() => new BleManager());
 
   useEffect(() => {
     requestPermissions();
+
     const stateSub = manager.onStateChange((state) => {
-      if (state === 'PoweredOn' && !isScanning && clockSynced) {
+      if (state === 'PoweredOn' && !isScanning) {
         startScan();
       }
     }, true);
@@ -42,8 +38,6 @@ const CarScreen = () => {
     const refreshInterval = setInterval(() => {
       setDevices(new Map(devicesRef.current));
     }, 100);
-
-    syncClock();
 
     return () => {
       stateSub.remove();
@@ -57,53 +51,27 @@ const CarScreen = () => {
   const requestPermissions = async () => {
     if (Platform.OS === 'android') {
       try {
-        await PermissionsAndroid.requestMultiple([
+        const granted = await PermissionsAndroid.requestMultiple([
           PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
           PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
           PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
         ]);
+
+        Object.entries(granted).forEach(([perm, status]) => {
+          console.log(`[Permission] ${perm}: ${status}`);
+        });
       } catch (err) {
+        console.error('[Permission] Error requesting permissions:', err.message);
         Alert.alert('Permission Error', err.message);
       }
     }
   };
 
   const handleAppStateChange = (nextState) => {
-    if (nextState === 'active' && !isScanning && clockSynced) {
+    if (nextState === 'active' && !isScanning) {
       startScan();
     } else if (nextState !== 'active' && isScanning) {
       stopScan();
-    }
-  };
-
-  const syncClock = async () => {
-    try {
-      setIsSyncing(true);
-      setSyncError(null);
-
-      const res = await fetch('https://timeapi.io/api/Time/current/zone?timeZone=UTC');
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-      const json = await res.json();
-
-      if (!json.dateTime) {
-        throw new Error('Invalid response format: missing dateTime');
-      }
-
-      const internetDate = new Date(json.dateTime + 'Z');
-      const internetTime = internetDate.getTime();
-      const localTime = Date.now();
-      const offset = internetTime - localTime;
-
-      console.log(`[ClockSync] Offset: ${offset} ms`);
-      setTimeOffset(offset);
-      setClockSynced(true);
-    } catch (err) {
-      console.error('[ClockSync] Failed:', err.message);
-      setSyncError(err.message || 'Unknown error');
-      setClockSynced(false);
-    } finally {
-      setIsSyncing(false);
     }
   };
 
@@ -113,7 +81,7 @@ const CarScreen = () => {
   };
 
   const startScan = () => {
-    if (isScanning || !clockSynced) return;
+    if (isScanning) return;
     setIsScanning(true);
     console.log('📡 Starting scan');
 
@@ -123,12 +91,10 @@ const CarScreen = () => {
         return;
       }
 
-      if (device && device.manufacturerData && device.name) {
+      if (device && device.manufacturerData) {
         try {
           const buffer = Buffer.from(device.manufacturerData, 'base64');
           const idString = buffer.toString('utf-8');
-
-          // Only handle devices with 'Scooter-' prefix
           if (idString.startsWith('Scooter-')) {
             const distance = calculateDistance(device.rssi);
 
@@ -176,58 +142,25 @@ const CarScreen = () => {
     <View style={styles.container}>
       <Text style={styles.header}>🚗 Car Scanner</Text>
 
-      {!clockSynced && (
-        <>
-          <Text style={styles.status}>
-            {isSyncing ? '🔄 Syncing time…' : '⚠️ Clock not synced.'}
-          </Text>
-          {syncError && <Text style={styles.errorText}>{syncError}</Text>}
-          {!isSyncing && (
-            <Button title="Retry Sync" onPress={syncClock} color="#007BFF" />
-          )}
-        </>
+      {!isScanning ? (
+        <Button title="Start Scan" onPress={startScan} />
+      ) : (
+        <Button title="Stop Scan" onPress={stopScan} color="#d9534f" />
       )}
 
-      {clockSynced && (
-        <>
-          <Text style={styles.status}>✅ Clock Synced</Text>
-
-          {!isScanning ? (
-            <Button title="Start Scan" onPress={startScan} />
-          ) : (
-            <Button title="Stop Scan" onPress={stopScan} color="#d9534f" />
-          )}
-
-          <FlatList
-            style={styles.listContainer}
-            data={Array.from(devices.values())}
-            keyExtractor={(item) => item.id}
-            renderItem={renderDevice}
-          />
-        </>
-      )}
+      <FlatList
+        style={styles.listContainer}
+        data={Array.from(devices.values())}
+        keyExtractor={(item) => item.id}
+        renderItem={renderDevice}
+      />
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 24, backgroundColor: '#fff' },
-  header: {
-    fontSize: 26,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  status: {
-    fontSize: 18,
-    textAlign: 'center',
-    marginBottom: 12,
-  },
-  errorText: {
-    marginTop: 8,
-    color: 'red',
-    textAlign: 'center',
-  },
+  header: { fontSize: 26, fontWeight: 'bold', textAlign: 'center', marginBottom: 20 },
   listContainer: {
     maxHeight: 450,
     borderWidth: 1,

@@ -208,21 +208,15 @@ npx expo prebuild
 Locate and update your AndroidManifest.xml from ```<project_name>\android\app\src\main\AndroidManifest.xml```
 
 ```xml
-<uses-permission-sdk-23 android:name="android.permission.ACCESS_COARSE_LOCATION"/>
-<uses-permission-sdk-23 android:name="android.permission.ACCESS_FINE_LOCATION"/>
-<!-- Permissions for Bluetooth scanning and connection -->
-<uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+<!-- Required for BLE on Android 12+ -->
+<uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation"/>
 <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-<uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
-<!-- Location permissions for Bluetooth scanning -->
+<uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
+<!-- Required for older Android versions -->
+<uses-permission android:name="android.permission.BLUETOOTH"/>
+<uses-permission android:name="android.permission.BLUETOOTH_ADMIN"/>
 <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-<uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
 <uses-feature android:name="android.hardware.bluetooth_le" android:required="true"/>
-<!-- Permissions for Bluetooth advertising -->
-<uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE"/>
-<!-- Permissions for Internet -->
-<uses-permission android:name="android.permission.INTERNET" />
 ```
 
 ## 30. Update your build.gradle
