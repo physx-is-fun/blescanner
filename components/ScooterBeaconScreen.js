@@ -1,5 +1,3 @@
-// components/ScooterBeaconScreen.js
-
 import { Buffer } from 'buffer';
 import { useEffect, useState } from 'react';
 import {
@@ -18,24 +16,22 @@ const COMPANY_ID = 0x004C; // Apple company ID
 
 const ScooterBeaconScreen = () => {
   const [isBroadcasting, setIsBroadcasting] = useState(false);
-  const [payloadHex, setPayloadHex] = useState('');
   const [deviceId, setDeviceId] = useState('');
   const [error, setError] = useState(null);
-
-  const [isSyncing, setIsSyncing] = useState(false);
   const [isSynced, setIsSynced] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [clockError, setClockError] = useState(null);
-  const [timeOffset, setTimeOffset] = useState(0);
 
   useEffect(() => {
-    requestPermissions()
-      .then(() => {
+    (async () => {
+      try {
+        await requestPermissions();
         BleAdvertiser.setCompanyId(COMPANY_ID);
-        syncClock();
-      })
-      .catch((err) => {
-        Alert.alert('Permissions Error', err.message);
-      });
+        await syncClock();
+      } catch (err) {
+        Alert.alert('Permissions or Sync Error', err.message);
+      }
+    })();
 
     return () => {
       stopBeacon();
@@ -44,45 +40,37 @@ const ScooterBeaconScreen = () => {
 
   const requestPermissions = async () => {
     if (Platform.OS === 'android') {
-      const result = await PermissionsAndroid.requestMultiple([
+      const granted = await PermissionsAndroid.requestMultiple([
         PermissionsAndroid.PERMISSIONS.BLUETOOTH_ADVERTISE,
         PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
         PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
       ]);
-      const allGranted = Object.values(result).every(
+      const allGranted = Object.values(granted).every(
         (status) => status === PermissionsAndroid.RESULTS.GRANTED
       );
       if (!allGranted) throw new Error('Required permissions not granted');
     }
   };
 
+  // Clock sync only to gate beacon start, not needed for payload now
   const syncClock = async () => {
     setIsSyncing(true);
     setClockError(null);
     try {
-      const res = await fetch(
-        'https://timeapi.io/api/Time/current/zone?timeZone=UTC'
-      );
+      const res = await fetch('https://timeapi.io/api/Time/current/zone?timeZone=UTC');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
       const json = await res.json();
       if (!json.dateTime) throw new Error('Invalid response format: missing dateTime');
 
-      const internetDate = new Date(json.dateTime + 'Z');
-      const internetTimeMs = internetDate.getTime();
-      const localTimeMs = Date.now();
-      const offset = internetTimeMs - localTimeMs;
-
-      setTimeOffset(offset);
       setIsSynced(true);
 
+      // Generate random ID
       const randomHex = Math.floor(Math.random() * 0xffff)
         .toString(16)
         .padStart(4, '0')
         .toUpperCase();
-      setDeviceId(`Scooter-${randomHex}`); // 👈 Updated prefix
-
-      generatePayload(offset);
+      setDeviceId(`Scooter-${randomHex}`);
     } catch (err) {
       setClockError(err.message || 'Unknown error');
       setIsSynced(false);
@@ -91,16 +79,12 @@ const ScooterBeaconScreen = () => {
     }
   };
 
-  const generatePayload = (offsetMs) => {
+  const generatePayload = () => {
     try {
-      const timestamp = Buffer.alloc(6);
-      const now = Date.now() + offsetMs;
-      timestamp.writeUIntBE(now, 0, 6); // Only timestamp, no 'Scooter' prefix
-      setPayloadHex(timestamp.toString('hex'));
-      Vibration.vibrate(100);
-      return timestamp;
+      // Encode "Scooter-XXXX" as UTF-8 bytes
+      const payload = Buffer.from(deviceId, 'utf-8');
+      return payload;
     } catch (err) {
-      console.error('Payload generation error:', err);
       setError(err.message);
       return null;
     }
@@ -112,7 +96,7 @@ const ScooterBeaconScreen = () => {
       return;
     }
 
-    const payloadBuffer = generatePayload(timeOffset);
+    const payloadBuffer = generatePayload();
     if (!payloadBuffer) return;
 
     try {
@@ -123,16 +107,17 @@ const ScooterBeaconScreen = () => {
         [1, 0],
         {
           includeDeviceName: false,
-          includeTxPowerLevel: true,
+          includeTxPowerLevel: false,
           manufacturerData: base64Payload,
         }
       );
 
       setIsBroadcasting(true);
-      console.log('[BLE] Beacon started with payload:', payloadHex);
+      Vibration.vibrate(100);
+      console.log('[BLE] Beacon started with payload:', deviceId);
     } catch (err) {
-      console.error('[BLE] Start failed:', err.message);
       setError(err.message);
+      console.error('[BLE] Start failed:', err.message);
     }
   };
 
@@ -142,8 +127,8 @@ const ScooterBeaconScreen = () => {
       setIsBroadcasting(false);
       console.log('[BLE] Beacon stopped');
     } catch (err) {
-      console.error('[BLE] Stop failed:', err.message);
       setError(err.message);
+      console.error('[BLE] Stop failed:', err.message);
     }
   };
 
@@ -168,9 +153,6 @@ const ScooterBeaconScreen = () => {
           <Text style={styles.label}>Device ID:</Text>
           <Text selectable style={styles.mono}>{deviceId}</Text>
 
-          <Text style={styles.label}>Payload (hex):</Text>
-          <Text selectable style={styles.mono}>{payloadHex}</Text>
-
           {!isBroadcasting ? (
             <Button title="Start Beacon" onPress={startBeacon} />
           ) : (
@@ -185,28 +167,10 @@ const ScooterBeaconScreen = () => {
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 24,
-    justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-  },
-  header: {
-    fontSize: 26,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  status: {
-    fontSize: 18,
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  label: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginTop: 10,
-  },
+  container: { flex: 1, padding: 24, justifyContent: 'center', backgroundColor: '#FFF' },
+  header: { fontSize: 26, fontWeight: 'bold', textAlign: 'center', marginBottom: 20 },
+  status: { fontSize: 18, textAlign: 'center', marginBottom: 20 },
+  label: { fontSize: 16, fontWeight: '600', marginTop: 10 },
   mono: {
     fontFamily: Platform.OS === 'android' ? 'monospace' : 'Courier',
     fontSize: 14,
@@ -215,11 +179,7 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     marginBottom: 10,
   },
-  error: {
-    color: 'red',
-    marginBottom: 10,
-    textAlign: 'center',
-  },
+  error: { color: 'red', marginBottom: 10, textAlign: 'center' },
 });
 
 export default ScooterBeaconScreen;

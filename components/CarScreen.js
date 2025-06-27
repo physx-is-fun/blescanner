@@ -123,34 +123,31 @@ const CarScreen = () => {
         return;
       }
 
-      if (device && device.id.includes('Scooter')) {
-        let latency = null;
-        let distance = calculateDistance(device.rssi);
+      if (device && device.manufacturerData && device.name) {
+        try {
+          const buffer = Buffer.from(device.manufacturerData, 'base64');
+          const idString = buffer.toString('utf-8');
 
-        if (device.manufacturerData) {
-          try {
-            const buffer = Buffer.from(device.manufacturerData, 'base64');
-            const tsBytes = buffer.slice(-6); // last 6 bytes = timestamp
-            const beaconTime = tsBytes.readUIntBE(0, 6);
-            const now = Date.now() + timeOffset;
-            latency = now - beaconTime;
-          } catch {
-            latency = null;
+          // Only handle devices with 'Scooter-' prefix
+          if (idString.startsWith('Scooter-')) {
+            const distance = calculateDistance(device.rssi);
+
+            const isNew = !devicesRef.current.has(device.id);
+            if (isNew) {
+              Vibration.vibrate(300);
+            }
+
+            devicesRef.current.set(device.id, {
+              id: device.id,
+              name: device.name || 'unknown',
+              rssi: device.rssi,
+              distance,
+              scooterId: idString,
+            });
           }
+        } catch (err) {
+          console.warn('Failed to parse beacon data:', err.message);
         }
-
-        const isNew = !devicesRef.current.has(device.id);
-        if (isNew) {
-          Vibration.vibrate(300);
-        }
-
-        devicesRef.current.set(device.id, {
-          id: device.id,
-          name: device.name || 'unknown',
-          rssi: device.rssi,
-          distance,
-          latency,
-        });
       }
     });
   };
@@ -167,15 +164,10 @@ const CarScreen = () => {
     <View style={styles.deviceItem}>
       <Text>Name: {item.name}</Text>
       <Text>ID: {item.id}</Text>
+      <Text>Scooter ID: {item.scooterId || 'N/A'}</Text>
       <Text>RSSI: {item.rssi} dBm</Text>
       <Text>
         Distance: {item.distance > 0 ? `${item.distance.toFixed(2)} m` : 'Unknown'}
-      </Text>
-      <Text>
-        Latency:{' '}
-        {item.latency !== null && item.latency >= 0
-          ? `${item.latency} ms`
-          : 'N/A'}
       </Text>
     </View>
   );
@@ -248,12 +240,6 @@ const styles = StyleSheet.create({
     padding: 10,
     marginVertical: 6,
     borderRadius: 6,
-  },
-  emptyText: {
-    textAlign: 'center',
-    color: '#888',
-    fontSize: 16,
-    paddingVertical: 20,
   },
 });
 
