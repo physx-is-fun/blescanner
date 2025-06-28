@@ -11,7 +11,7 @@ import {
   StyleSheet,
   Text,
   Vibration,
-  View,
+  View
 } from 'react-native';
 import { BleManager } from 'react-native-ble-plx';
 
@@ -90,12 +90,12 @@ const CarScreen = () => {
         console.error('Scan error:', error.message);
         return;
       }
-
       if (device && device.manufacturerData) {
         try {
           const buffer = Buffer.from(device.manufacturerData, 'base64');
-          const idString = buffer.toString('utf-8');
-          if (idString.startsWith('Scooter-')) {
+          const payloadOnly = buffer.slice(2); // 🛠 Skip first 2 bytes
+          const idString = payloadOnly.toString('utf-8');
+          if (idString.startsWith('SC-')) {
             const distance = calculateDistance(device.rssi);
 
             const isNew = !devicesRef.current.has(device.id);
@@ -105,11 +105,12 @@ const CarScreen = () => {
 
             devicesRef.current.set(device.id, {
               id: device.id,
-              name: device.name || 'unknown',
+              name: device.name || 'Scooter',
               rssi: device.rssi,
               distance,
               scooterId: idString,
             });
+
           }
         } catch (err) {
           console.warn('Failed to parse beacon data:', err.message);

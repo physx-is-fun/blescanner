@@ -13,6 +13,8 @@ import {
 import BleAdvertiser from 'react-native-ble-advertiser';
 
 const COMPANY_ID = 0x004C; // Apple
+const UUID = '00000000-0000-1000-8000-00805F9B34FB';
+const serviceData = [1];
 
 const ScooterBeaconScreen = () => {
   const [isBroadcasting, setIsBroadcasting] = useState(false);
@@ -29,7 +31,7 @@ const ScooterBeaconScreen = () => {
           .toString(16)
           .padStart(4, '0')
           .toUpperCase();
-        setDeviceId(`Scooter-${randomHex}`);
+        setDeviceId(`SC-${randomHex}`);
       } catch (err) {
         Alert.alert('Permission Error', err.message);
       }
@@ -47,6 +49,7 @@ const ScooterBeaconScreen = () => {
           PermissionsAndroid.PERMISSIONS.BLUETOOTH_ADVERTISE,
           PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
           PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+          PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN, 
         ]);
 
         Object.entries(granted).forEach(([perm, status]) => {
@@ -61,7 +64,7 @@ const ScooterBeaconScreen = () => {
 
   const generatePayload = () => {
     try {
-      return Buffer.from(deviceId, 'utf-8');
+      return Array.from(Buffer.from(deviceId, 'utf-8'));
     } catch (err) {
       setError(err.message);
       return null;
@@ -73,15 +76,13 @@ const ScooterBeaconScreen = () => {
     if (!payloadBuffer) return;
 
     try {
-      const base64Payload = payloadBuffer.toString('base64');
 
       await BleAdvertiser.broadcast(
-        '00000000-0000-1000-8000-00805F9B34FB',
-        [1, 0],
+        UUID,
+        payloadBuffer,
         {
-          includeDeviceName: true,
+          includeDeviceName: false,
           includeTxPowerLevel: false,
-          manufacturerData: base64Payload,
           advertiseMode: BleAdvertiser.ADVERTISE_MODE_LOW_LATENCY,
           txPowerLevel: BleAdvertiser.ADVERTISE_TX_POWER_HIGH,
         }
